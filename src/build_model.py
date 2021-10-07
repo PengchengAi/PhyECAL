@@ -1,0 +1,125 @@
+from abc import ABC
+
+import numpy as np
+import tensorflow as tf
+from tensorflow.python.keras.engine import data_adapter
+from tensorflow.keras import Input
+from tensorflow.keras import layers
+from tensorflow.keras import metrics
+from tensorflow.keras import optimizers
+from tensorflow.keras import regularizers
+from tensorflow.keras import Model
+from tensorflow.keras import Sequential
+
+
+def build_seq_model_base(cfg, name="seq_model", l2_norm=None):
+    # generate input layer
+    input_length = cfg["input_length"]
+    input_layer: list[layers.Layer] = [layers.InputLayer(input_shape=(input_length, 1))]
+    # generate encoder layers
+    encoder_layer_spec = cfg["encoder_layer_spec"]
+    encoder_layers: list[layers.Layer] = []
+
+    for ind, (filters, kernel_size, strides, activation, dropout, *args) in enumerate(encoder_layer_spec):
+        if l2_norm is not None:
+            k_reg = regularizers.l2(l2_norm)
+            b_reg = regularizers.l2(l2_norm)
+        else:
+            k_reg = None
+            b_reg = None
+        enc_layer = layers.Conv1D(filters, kernel_size, strides=strides, padding="same", name="enc_conv_%d" % ind,
+                                  activation=activation, kernel_regularizer=k_reg, bias_regularizer=b_reg)
+        encoder_layers.append(enc_layer)
+        if dropout:
+            encoder_layers.append(layers.Dropout(rate=dropout, name="enc_conv_%d_dropout" % ind))
+    # generate regression layers
+    regression_spec = cfg["regression_spec"]
+    regression_layers: list[layers.Layer] = [layers.Flatten(name="reg_input_flat")]
+    for ind, (weights, activation, dropout, *args) in enumerate(regression_spec):
+        if l2_norm is not None:
+            if ind == len(regression_spec) - 1:
+                k_reg = None
+                b_reg = None
+            else:
+                k_reg = regularizers.l2(l2_norm)
+                b_reg = regularizers.l2(l2_norm)
+        else:
+            k_reg = None
+            b_reg = None
+        reg_layer = layers.Dense(weights, name="reg_fc_%d" % ind, activation=activation, kernel_regularizer=k_reg,
+                                 bias_regularizer=b_reg)
+        regression_layers.append(reg_layer)
+        if dropout:
+            regression_layers.append(layers.Dropout(rate=dropout, name="reg_fc_%d_dropout" % ind))
+
+    # generate model
+    seq_layers = input_layer + encoder_layers + regression_layers
+    model = Sequential(layers=seq_layers, name=name)
+    return model
+
+
+class PhyBindModel(Model, ABC):
+    def __init__(self, base, group, wgt_matrix, **kwargs):
+        super(PhyBindModel, self).__init__(**kwargs)
+        self.base = base
+        self.group = group
+        self.wgt_matrix = wgt_matrix
+        self.total_loss_tracker = metrics.Mean(name="total_loss")
+
+    @property
+    def metrics(self):
+        return [
+            self.total_loss_tracker
+        ]
+
+    def train_step(self, data):
+        data = data_adapter.expand_1d(data)
+        x, y, _ = data_adapter.unpack_x_y_sample_weight(data)
+
+        assert len(x.shape) == 4 and x.shape[1] == self.group, "Shape mismatches."
+
+        with tf.GradientTape() as tape:
+            x_input = tf.reshape(x, shape=(x.shape[0] * x.shape[1],) + x.shape[2:], name="x_input_reshape")
+            y_output = self.base(x_input)
+            y_pred = tf.reshape(y_output, shape=y.shape, name="y_output_reshape")
+            y_diff = y_pred - y
+            y_wgt = tf.reshape(
+                tf.tile(self.wgt_matrix, multiples=[y.shape[0], 1]),
+                shape=(y.shape[0], self.group, self.group)
+            )
+            residuals = tf.matmul(y_wgt, y_diff, name="result_matmul")
+            total_loss = tf.reduce_mean(residuals ** 2)
+
+        grads = tape.gradient(total_loss, self.trainable_weights)
+        self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
+        self.total_loss_tracker.update_state(total_loss)
+        return {
+            "loss": self.total_loss_tracker.result()
+        }
+
+
+def test_model():
+    base_inputs = Input(shape=(32, 1))
+    x = layers.Conv1D(32, 4, activation="relu", strides=2, padding="same")(base_inputs)
+    x = layers.Conv1D(64, 4, activation="relu", strides=2, padding="same")(x)
+    x = layers.Flatten()(x)
+    x = layers.Dense(16, activation="relu")(x)
+    x = layers.Dense(1, activation=None)(x)
+    base = Model(base_inputs, x, name="encoder")
+    base.summary()
+
+    a = np.array([[0, 1, 2, 3, 4, 5, 6, 7], [1, 1, 1, 1, 1, 1, 1, 1]], dtype=np.float32).T
+    idn = np.identity(8, dtype=np.float32)
+    wgt_matrix = a @ np.linalg.inv(a.T @ a) @ a.T - idn
+
+    phy_bind_model = PhyBindModel(base=base, group=8, wgt_matrix=wgt_matrix)
+
+    x_fake = np.random.random(size=(128, 8, 32, 1)).astype(np.float32)
+    y_fake = np.random.random(size=(128, 8, 1)).astype(np.float32)
+
+    phy_bind_model.compile(optimizer=optimizers.Adam())
+    phy_bind_model.fit(x=x_fake, y=y_fake, batch_size=16, epochs=10)
+
+
+if __name__ == "__main__":
+    test_model()
