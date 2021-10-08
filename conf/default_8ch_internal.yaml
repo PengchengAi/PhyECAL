@@ -1,0 +1,47 @@
+data_raw_file:
+  bind:
+    - 'F:/Data/ECAL8ch/210926-210927_npz/wave_raw.npz'
+    - 'F:/Data/ECAL8ch/210927-210928_npz/wave_raw.npz'
+    - 'F:/Data/ECAL8ch/210928_01_npz/wave_raw.npz'
+    - 'F:/Data/ECAL8ch/210928_02_npz/wave_raw.npz'
+    - 'F:/Data/ECAL8ch/210928_03_npz/wave_raw.npz'
+    - 'F:/Data/ECAL8ch/210928-210929_npz/wave_raw.npz'
+    - 'F:/Data/ECAL8ch/210929_01_npz/wave_raw.npz'
+
+signal_ch:
+  channel_count: 8
+  sample_every: 5
+  sample_points: 128
+  sample_start: [ 80, 80, 80, 80, 110, 110, 110 ]
+  file_index_multiple: 10000
+
+supp:
+  save_dir: './temp/default_8ch/'
+  save_prefix: 'default_8ch'
+
+dataset:
+  bind:
+    npz_file: { }
+    ratio:
+      - 8
+      - 1
+      - 1
+    use_validation: true
+    norm_wave: true
+    norm_label: false
+    checkpoint: './temp/default_8ch/nn_data_var_chk.npz'
+
+baseline:
+  upd_kwargs:
+    net_cfg_key: 'default_in128'
+  group: 8
+  train_batch_size: 32
+  train_epoch: 80
+  save_model: false
+  export_model: false
+  save_results: false
+
+global:
+  model_save_dir: './temp/default_8ch/model/'
+  model_export_dir: './temp/default_8ch/export/'
+  result_save_dir: './temp/default_8ch/result/'
