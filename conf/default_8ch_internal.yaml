@@ -34,12 +34,13 @@ dataset:
 baseline:
   upd_kwargs:
     net_cfg_key: 'default_in128'
+    net_compile_key: 'adam'
   group: 8
   train_batch_size: 32
-  train_epoch: 80
-  save_model: false
+  train_epoch: 800
+  save_model: true
   export_model: false
-  save_results: false
+  save_results: true
 
 global:
   model_save_dir: './temp/default_8ch/model/'

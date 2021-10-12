@@ -347,10 +347,13 @@ def prepare_data_inst_npz(config_file, upd_dict=None, data_key="bind", amount=No
         i_index = npz_content_list[cont_index]["index"][data_index]
         # cancel baseline
         for j in range(channel_count):
-            j_baseline = np.mean(i_wave[j, baseline_range[cont_index][0]:baseline_range[cont_index][1]])
+            j_baseline = np.mean(i_wave[j, baseline_range[cont_index][0]:baseline_range[cont_index][1]], axis=None)
             i_wave[j, :] = i_wave[j, :] - j_baseline
         # start of sub-sampling
-        i_origin = np.random.randint(low=random_origin[0], high=random_origin[1], size=None, dtype=int)
+        if random_origin[0] >= random_origin[1]:
+            i_origin = random_origin[0]
+        else:
+            i_origin = np.random.randint(low=random_origin[0], high=random_origin[1], size=None, dtype=int)
         i_start = i_origin + sample_start[cont_index]
         # random shift
         i_shift = np.random.choice(shift_start, size=channel_count, replace=True)

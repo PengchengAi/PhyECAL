@@ -17,7 +17,7 @@ default_in128_config = {
     "regression_spec": (
         (64, "relu", False),
         (64, "relu", False),
-        (2, "linear", False, "dense_act_full")
+        (1, "linear", False, "dense_act_full")
     ),
     "slicing_spec": (
         (0, 1, "time"),

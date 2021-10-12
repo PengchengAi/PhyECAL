@@ -1,3 +1,5 @@
+import os
+import yaml
 from abc import ABC
 
 import numpy as np
@@ -10,6 +12,8 @@ from tensorflow.keras import optimizers
 from tensorflow.keras import regularizers
 from tensorflow.keras import Model
 from tensorflow.keras import Sequential
+
+from src.util import update
 
 
 def build_seq_model_base(cfg, name="seq_model", l2_norm=None):
@@ -96,6 +100,27 @@ class PhyBindModel(Model, ABC):
         return {
             "loss": self.total_loss_tracker.result()
         }
+
+
+def compile_model(model: Model, net_compile_key="adam"):
+    model.compile(optimizer=net_compile_key)
+
+
+def save_seq_model(model: Model, config_file, upd_dict=None, data_key="bind", name="seq_model"):
+    with open(config_file, mode="r") as fp:
+        cfg = yaml.load(fp, Loader=yaml.FullLoader)
+    if upd_dict is not None:
+        cfg = update(cfg, upd_dict)
+        print("Configuration has been updated with the dictionary:", upd_dict)
+
+    model_save_dir = cfg["global"]["model_save_dir"]
+    if not os.path.exists(model_save_dir):
+        os.makedirs(model_save_dir)
+
+    model_name = "%s-%s_%s" % (cfg["supp"]["save_prefix"], data_key, name)
+    model_path = os.path.join(model_save_dir, model_name)
+    model.save(filepath=model_path)
+    print("Model %s has been saved to: %s" % (name, model_path))
 
 
 def test_model():

@@ -1,3 +1,4 @@
+import os
 import inspect
 import yaml
 
@@ -6,7 +7,7 @@ from scipy.stats import linregress
 import matplotlib.pyplot as plt
 
 from src.data_provider import prepare_data_inst_npz, DataHandler
-from src.build_model import build_seq_model_base, PhyBindModel
+from src.build_model import build_seq_model_base, PhyBindModel, compile_model, save_seq_model
 from conf.net_config import AVAILABLE_CONFIGS
 
 
@@ -28,6 +29,10 @@ def physics_bind_routine(config_file, end_cond_callback=None, **kwargs):
     if "upd_kwargs" in base_cfg:
         kwargs.update(base_cfg["upd_kwargs"])
 
+    kwargs["config_file"] = config_file
+    data_kwargs = {k: v for k, v in kwargs.items() if k in inspect.getfullargspec(prepare_data_inst_npz)[0]}
+    save_model_kwargs = {k: v for k, v in kwargs.items() if k in inspect.getfullargspec(save_seq_model)[0]}
+
     model_cfg = AVAILABLE_CONFIGS[kwargs["net_cfg_key"]]
     base_model = build_seq_model_base(cfg=model_cfg)
 
@@ -36,9 +41,8 @@ def physics_bind_routine(config_file, end_cond_callback=None, **kwargs):
         group=base_cfg["group"],
         wgt_matrix=generate_wgt_matrix(length=base_cfg["group"])
     )
+    compile_model(model=phy_bind_inst, net_compile_key=kwargs["net_compile_key"])
 
-    data_kwargs = {k: v for k, v in kwargs.items() if k in inspect.getfullargspec(prepare_data_inst_npz)[0]}
-    data_kwargs["config_file"] = config_file
     data_handler = prepare_data_inst_npz(**data_kwargs)
 
     train_data_dict = data_handler.generate_training_dataset()
@@ -70,10 +74,21 @@ def physics_bind_routine(config_file, end_cond_callback=None, **kwargs):
         if end_cond_callback(fit_stats_dict):
             end_cond = True
 
+    if base_cfg["save_model"]:
+        save_model_kwargs["model"] = base_model
+        if "save_name_override" in base_cfg:
+            save_model_kwargs["name"] = base_cfg["save_name_override"]
+        save_seq_model(**save_model_kwargs)
+
     return base_model, phy_bind_inst, data_handler
 
 
-def base_eval_plot(base_model, data_handler: DataHandler, plot_single=False):
+def base_eval_plot(config_file, base_model, data_handler: DataHandler, plot_single=False):
+    with open(config_file, mode="r") as fp:
+        cfg = yaml.load(fp, Loader=yaml.FullLoader)
+
+    base_cfg = cfg["baseline"]
+
     test_data_dict = data_handler.generate_test_val_dataset()
     targets = test_data_dict["targets"]
 
@@ -83,6 +98,18 @@ def base_eval_plot(base_model, data_handler: DataHandler, plot_single=False):
     for i in range(total_samples):
         out_result = base_model(targets[i, ...])
         out_result_list[i, ...] = np.squeeze(out_result, axis=-1)
+
+    if base_cfg["save_results"]:
+        result_save_dir = cfg["global"]["result_save_dir"]
+        if not os.path.exists(result_save_dir):
+            os.makedirs(result_save_dir)
+        result_name = "%s-result.npz" % cfg["supp"]["save_prefix"]
+        result_path = os.path.join(result_save_dir, result_name)
+        np.savez(
+            result_path,
+            result=out_result_list
+        )
+        print("Evaluation results of model have been saved to: %s" % result_path)
 
     x = np.arange(targets.shape[1], dtype=np.float32)
 
@@ -105,11 +132,12 @@ def base_eval_plot(base_model, data_handler: DataHandler, plot_single=False):
     plt.show()
 
 
-def main():
+def main(config_file):
     base_model, _, data_handler = physics_bind_routine(
-        config_file="./conf/default_8ch_internal.yaml"
+        config_file=config_file
     )
     base_eval_plot(
+        config_file=config_file,
         base_model=base_model,
         data_handler=data_handler,
         plot_single=True
@@ -117,4 +145,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(config_file="./conf/default_8ch_internal.yaml")
