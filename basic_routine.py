@@ -3,6 +3,8 @@ import inspect
 import yaml
 
 import numpy as np
+from keras.models import load_model
+from keras.callbacks import Callback
 from scipy.stats import linregress
 import matplotlib.pyplot as plt
 
@@ -18,6 +20,66 @@ def generate_wgt_matrix(length=8):
     idn = np.identity(8, dtype=np.float32)
     wgt_matrix = a @ np.linalg.inv(a.T @ a) @ a.T - idn
     return wgt_matrix
+
+
+def get_data_handler(config_file, **kwargs):
+    with open(config_file, mode="r") as fp:
+        cfg = yaml.load(fp, Loader=yaml.FullLoader)
+
+    base_cfg = cfg["baseline"]
+
+    if "upd_kwargs" in base_cfg:
+        kwargs.update(base_cfg["upd_kwargs"])
+
+    kwargs["config_file"] = config_file
+    data_kwargs = {k: v for k, v in kwargs.items() if k in inspect.getfullargspec(prepare_data_inst_npz)[0]}
+
+    data_handler = prepare_data_inst_npz(**data_kwargs)
+
+    return data_handler
+
+
+class DrawSampleCallback(Callback):
+    def __init__(self, test_data, save_dir):
+        super(DrawSampleCallback, self).__init__()
+        self.test_data = test_data
+        self.save_dir = save_dir
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+    def on_epoch_end(self, epoch, logs=None):
+        if (epoch+1) % 50 == 0:
+            base_model = self.model.base
+
+            total_samples = self.test_data.shape[0]
+            assert total_samples == 8, "Unexpected total samples."
+            out_result_list = np.zeros(shape=self.test_data.shape[:2], dtype=np.float32)
+
+            for i in range(total_samples):
+                out_result = base_model(self.test_data[i, ...])
+                out_result_list[i, ...] = np.squeeze(out_result, axis=-1)
+
+            fig = plt.figure()
+            _, h = fig.get_size_inches()
+            fig.set_size_inches(h * 4 * 0.8, h * 2 * 0.8)
+            axes = fig.subplots(2, 4)
+            plt.suptitle("Fit result at %d epochs" % (epoch+1))
+
+            x = np.arange(self.test_data.shape[1], dtype=np.float32)
+
+            for i in range(total_samples):
+                row = i // 4
+                col = i % 4
+                i_res = linregress(x, out_result_list[i, :])
+                axes[row, col].plot(x, out_result_list[i, :], 'o', label='original data')
+                axes[row, col].plot(x, i_res.intercept + i_res.slope * x, 'r', label='fitted line')
+
+            save_name = "figure_on_epoch_%d.jpg" % (epoch+1)
+            save_path = os.path.join(self.save_dir, save_name)
+            plt.savefig(save_path)
+            plt.close("all")
+
+            print("Save figure to %s" % save_path)
 
 
 def physics_bind_routine(config_file, end_cond_callback=None, **kwargs):
@@ -57,7 +119,13 @@ def physics_bind_routine(config_file, end_cond_callback=None, **kwargs):
         batch_size=base_cfg["train_batch_size"],
         epochs=base_cfg["train_epoch"],
         validation_data=None,
-        verbose=train_verbose
+        verbose=train_verbose,
+        callbacks=[
+            DrawSampleCallback(
+                test_data=train_data_dict["targets"][:8],
+                save_dir=os.path.join(cfg["global"]["result_save_dir"], "figs")
+            )
+        ]
     )
     # second stage: fit until converge on training set
     end_cond = False
@@ -91,6 +159,9 @@ def base_eval_plot(config_file, base_model, data_handler: DataHandler, plot_sing
 
     test_data_dict = data_handler.generate_test_val_dataset()
     targets = test_data_dict["targets"]
+
+    if isinstance(base_model, str):
+        base_model = load_model(base_model, compile=False)
 
     total_samples = targets.shape[0]
     out_result_list = np.zeros(shape=targets.shape[:2], dtype=np.float32)
@@ -132,17 +203,27 @@ def base_eval_plot(config_file, base_model, data_handler: DataHandler, plot_sing
     plt.show()
 
 
-def main(config_file):
-    base_model, _, data_handler = physics_bind_routine(
-        config_file=config_file
-    )
+def main(config_file, base_model=None, plot_single=True):
+    if base_model is None:
+        base_model, _, data_handler = physics_bind_routine(
+            config_file=config_file
+        )
+    else:
+        data_handler = get_data_handler(
+            config_file=config_file
+        )
+
     base_eval_plot(
         config_file=config_file,
         base_model=base_model,
         data_handler=data_handler,
-        plot_single=True
+        plot_single=plot_single
     )
 
 
 if __name__ == "__main__":
-    main(config_file="./conf/default_8ch_internal.yaml")
+    main(
+        config_file="./conf/default_8ch_internal.yaml",
+        base_model=None,
+        plot_single=True
+    )

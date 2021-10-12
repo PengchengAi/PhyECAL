@@ -84,7 +84,7 @@ class PhyBindModel(Model, ABC):
 
         with tf.GradientTape() as tape:
             x_input = tf.reshape(x, shape=(x.shape[0] * x.shape[1],) + x.shape[2:], name="x_input_reshape")
-            y_output = self.base(x_input)
+            y_output = self.base(x_input, training=True)
             y_pred = tf.reshape(y_output, shape=y.shape, name="y_output_reshape")
             y_diff = y_pred - y
             y_wgt = tf.reshape(
@@ -142,8 +142,10 @@ def test_model():
     x_fake = np.random.random(size=(128, 8, 32, 1)).astype(np.float32)
     y_fake = np.random.random(size=(128, 8, 1)).astype(np.float32)
 
+    print(base.trainable_weights[0][0][0])
     phy_bind_model.compile(optimizer=optimizers.Adam())
-    phy_bind_model.fit(x=x_fake, y=y_fake, batch_size=16, epochs=10)
+    phy_bind_model.fit(x=x_fake, y=y_fake, batch_size=16, epochs=40, verbose=0)
+    print(base.trainable_weights[0][0][0])
 
 
 if __name__ == "__main__":
