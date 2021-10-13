@@ -37,7 +37,7 @@ baseline:
     net_compile_key: 'adam'
   group: 8
   train_batch_size: 32
-  train_epoch: 800
+  train_epoch: 1600
   save_model: true
   export_model: false
   save_results: true

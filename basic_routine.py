@@ -112,10 +112,22 @@ def physics_bind_routine(config_file, end_cond_callback=None, **kwargs):
         train_verbose = base_cfg["train_verbose"]
     else:
         train_verbose = "auto"
+    # combine inputs and targets
+    inputs = train_data_dict["inputs"]
+    targets = train_data_dict["targets"]
+    labels = train_data_dict["labels"]
+    targets_labels = np.zeros_like(labels)
+    comb_inputs = np.concatenate((inputs, targets), axis=0)
+    comb_labels = np.concatenate((labels, targets_labels), axis=0)
+    # shuffle combined training set
+    index_array = np.arange(comb_inputs.shape[0], dtype=int)
+    np.random.shuffle(index_array)
+    comb_inputs = comb_inputs[index_array]
+    comb_labels = comb_labels[index_array]
     # first stage: fit for a certain epochs
     phy_bind_inst.fit(
-        train_data_dict["inputs"],
-        train_data_dict["labels"],
+        comb_inputs,
+        comb_labels,
         batch_size=base_cfg["train_batch_size"],
         epochs=base_cfg["train_epoch"],
         validation_data=None,
@@ -131,8 +143,8 @@ def physics_bind_routine(config_file, end_cond_callback=None, **kwargs):
     end_cond = False
     while end_cond_callback is not None and not end_cond:
         fit_stats_dict = phy_bind_inst.fit(
-            train_data_dict["inputs"],
-            train_data_dict["labels"],
+            comb_inputs,
+            comb_labels,
             batch_size=base_cfg["train_batch_size"],
             epochs=1,
             validation_data=None,
