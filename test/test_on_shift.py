@@ -79,13 +79,15 @@ def main(config_file, base_model, selected=0, shift_range=20, debug=False):
     plt.xlabel("shifted time (ns)")
     plt.ylabel("predicted time (ns)")
     for i in range(channel_count):
-        plt.plot(x, out_result_list[:, i] * 0.4)
+        plt.plot(x, out_result_list[:, i] * 0.4, label="ch_%d" % i)
+    plt.legend()
     plt.show()
 
 
 if __name__ == "__main__":
     main(
-        config_file="./conf/default_8ch_internal.yaml",
-        base_model="./temp/default_8ch/model/default_8ch-bind_seq_model",
-        selected=0
+        config_file="./conf/random_orig_l4_8ch_internal.yaml",
+        base_model="./temp/random_orig_l4_8ch/compact_model/random_orig_l4_8ch-bind_seq_model",
+        selected=0,
+        shift_range=20
     )

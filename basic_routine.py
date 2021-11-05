@@ -235,7 +235,7 @@ def main(config_file, base_model=None, plot_single=True):
 
 if __name__ == "__main__":
     main(
-        config_file="./conf/default_8ch_internal.yaml",
+        config_file="./conf/random_orig_l4_8ch_internal.yaml",
         base_model=None,
-        plot_single=True
+        plot_single=False
     )
