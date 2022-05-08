@@ -3,6 +3,7 @@ import yaml
 
 from tensorflow.keras.models import load_model
 import numpy as np
+from scipy.stats import linregress
 import matplotlib.pyplot as plt
 
 from src.data_provider import prepare_data_inst_npz
@@ -25,7 +26,7 @@ def get_data_handler(config_file, **kwargs):
     return data_handler
 
 
-def main(config_file, base_model, selected=0, shift_range=20, debug=False):
+def main(config_file, base_model, selected=0, shift_range=20, timestep=0.4, debug=False):
     with open(config_file, mode="r") as fp:
         cfg = yaml.load(fp, Loader=yaml.FullLoader)
 
@@ -75,13 +76,27 @@ def main(config_file, base_model, selected=0, shift_range=20, debug=False):
 
     plt.figure()
     plt.title("Predict shift waveform")
-    x = np.linspace(0, shift_range * 0.4, shift_range, endpoint=False, dtype=np.float32)
+    x = np.linspace(0, shift_range * timestep, shift_range, endpoint=False, dtype=np.float32)
+    out_result_list = out_result_list * timestep
+
+    i_res_list = []
     plt.xlabel("shifted time (ns)")
     plt.ylabel("predicted time (ns)")
     for i in range(channel_count):
-        plt.plot(x, out_result_list[:, i] * 0.4, label="ch_%d" % i)
+        i_res = linregress(x, out_result_list[:, i])
+        i_res_list.append(i_res)
+        slope = i_res.slope
+        intercept = i_res.intercept
+        residuals = out_result_list[:, i] - (intercept + slope * x)
+        residuals_std = np.std(residuals)
+        plt.plot(x, intercept + slope * x, label="ch_%d fit" % i, linestyle="-.")
+        plt.plot(x, out_result_list[:, i], label="ch_%d (%.2f)" % (i, float(residuals_std)))
+        print("channel %d: intercept %.2f, slope %.2f, std. of residuals %.2f" % (
+            i, intercept, slope, float(residuals_std)))
     plt.legend()
     plt.show()
+
+    return out_result_list, i_res_list, sig_cfg["shift_start"]
 
 
 if __name__ == "__main__":
@@ -89,5 +104,5 @@ if __name__ == "__main__":
         config_file="./conf/random_orig_l4_8ch_internal.yaml",
         base_model="./temp/random_orig_l4_8ch/compact_model/random_orig_l4_8ch-bind_seq_model",
         selected=0,
-        shift_range=20
+        shift_range=40
     )

@@ -3,7 +3,7 @@ from scipy.stats import linregress, norm
 import matplotlib.pyplot as plt
 
 
-def main(result_path, thresh=0.7):
+def main(result_path, thresh=0.7, timestep=0.4):
     result_content = np.load(result_path)
     out_result_list = result_content["result"]
 
@@ -35,16 +35,19 @@ def main(result_path, thresh=0.7):
     cal_error_list = []
     for res in sel_result_list:
         for i in range(6):
-            cal_error_list.append((res[i+2] + res[i] - res[i+1] * 2) * 0.4 / np.sqrt(6))
+            cal_error_list.append((res[i+2] + res[i] - res[i+1] * 2) * timestep / np.sqrt(6))
 
-    std = np.std(cal_error_list)
     mean = np.mean(cal_error_list)
+    std = np.std(cal_error_list)
 
+    print("mean value: %.3f, std. value: %.3f" % (float(mean), float(std)))
     plt.figure()
     plt.title("Distribution of differences\n(count: %d, std.: %.3f)" % (len(cal_error_list), float(std)))
     _, bins, _ = plt.hist(cal_error_list, bins=50, density=True)
     plt.plot(bins, norm.pdf(bins, loc=mean, scale=std), "r-.")
     plt.show()
+
+    return cal_error_list, mean, std
 
 
 if __name__ == "__main__":
