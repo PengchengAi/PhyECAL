@@ -38,6 +38,9 @@ def main(config_file, base_model, selected=0, shift_range=20, timestep=0.4, debu
     channel_count = sig_cfg["channel_count"]
     baseline_range = [0, start]
 
+    if "shift_start" not in sig_cfg:
+        sig_cfg["shift_start"] = [-1, 1]
+
     raw_npz_file = cfg["data_raw_file"]["bind"][0]
     raw_content = np.load(raw_npz_file)
     selected_raw = raw_content["data"][selected, ...]
