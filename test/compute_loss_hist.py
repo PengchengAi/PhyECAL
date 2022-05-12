@@ -35,16 +35,18 @@ def compute(shift_start, slope_list, reso_list, sample_cnt=1000, channels=8, tim
                 s_res = linregress(x, data[s, :])
                 total_loss += np.mean((data[s, :] - (s_res.intercept + s_res.slope * x)) ** 2, axis=None)
             mean_loss = total_loss / sample_cnt
-            res_hist[i, j] = mean_loss
+            res_hist[i, j] = np.sqrt(mean_loss)
+        print("finish No. %d slope: %.3f" % (i, slope))
 
     return res_hist
 
 
-def main(save_dir, plot=True):
-    slope_list = np.linspace(0.01, 0.99, 100, endpoint=True)
-    reso_list = np.linspace(100., 1000., 100, endpoint=True)
-    for i in range(1, 11):
+def main(save_dir, shift_start_range, plot=True):
+    slope_list = np.linspace(0.01, 0.99, 20, endpoint=True)
+    reso_list = np.linspace(0.1, 1., 24, endpoint=True)
+    for i in shift_start_range:
         shift_start = [-i, i]
+        print("computation for shift start: %d" % i)
         res_hist = compute(
             shift_start=shift_start,
             slope_list=slope_list,
@@ -53,19 +55,28 @@ def main(save_dir, plot=True):
         save_path = os.path.join(save_dir, "l%d_8ch_hist.npz" % i)
         np.savez(
             save_path,
-            hist=res_hist
+            hist=res_hist,
+            slope_list=slope_list,
+            reso_list=reso_list
         )
         if plot:
             plt.figure()
-            plt.imshow(res_hist)
-            x = np.arange(100)
+            plt.title("test rms (ns) vs. resolution & slope at %d random shift" % i)
+            plt.imshow(res_hist, cmap=plt.cm.get_cmap("jet"))
             plt.xlabel("resolution (ns)")
-            plt.xticks(x[::10], ["%.1f" % elem for elem in reso_list[::10]])
+            x = np.arange(24)
+            plt.xticks(x[::4], ["%.3f" % elem for elem in reso_list[::4]])
             plt.ylabel("slope")
-            plt.yticks(x[::10], ["%.3f" % elem for elem in slope_list[::10]])
+            y = np.arange(20)
+            plt.yticks(y[::4], ["%.3f" % elem for elem in slope_list[::4]])
+            plt.colorbar()
             plt.tight_layout()
             plt.show()
 
 
 if __name__ == "__main__":
-    main("./temp/")
+    main(
+        save_dir="./temp/loss_hist/",
+        shift_start_range=range(1, 5),
+        plot=False
+    )
