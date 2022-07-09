@@ -6,7 +6,8 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from scipy.stats import linregress, norm
 
-from src.build_model import ToyPhyBindModel, build_seq_model_base, compile_model
+from src.build_model import build_seq_model, build_seq_model_base, ToyPhyBindModel, compile_model
+from src.quan_aux import quantize_scope, quantize_apply
 from conf.net_config import AVAILABLE_CONFIGS
 
 
@@ -82,14 +83,69 @@ def apply_nn(training_data, test_data, net_cfg_key="default_in32", net_compile_k
     if verbose >= 1:
         plt.figure()
         plt.title("entries = %d, mean = %.3f, std. = %.3f" % (len(test_diff), float(mean), float(std)))
-        _, bins, _ = plt.hist(test_diff, density=True)
+        _, bins, _ = plt.hist(test_diff.numpy(), density=True)
         x = np.linspace(bins[0], bins[-1], 101, endpoint=True)
         plt.plot(x, norm.pdf(x, loc=mean, scale=std), "r--")
         plt.show()
     return std
 
 
-def work_routine(dirname, interp=10, folds=10, verbose=0):
+def apply_nn_quan(training_data, test_data, net_cfg_key="default_in32", net_compile_key="adam", timestep=8., verbose=0):
+    # prepare model
+    model_cfg = AVAILABLE_CONFIGS[net_cfg_key]
+    base_model, q_cfg_dict = build_seq_model(cfg=model_cfg)
+    base_model.summary()
+    # prepare data
+    training_data_fit = np.expand_dims(training_data, axis=-1)
+    fake_label_data = np.zeros(shape=(training_data.shape[0], 2, 1), dtype=np.float32)
+    # train base model
+    phy_bind_inst = ToyPhyBindModel(base=base_model, random_start=8, sample_rate=10, sample_pts=32)
+    compile_model(model=phy_bind_inst, net_compile_key=net_compile_key)
+    phy_bind_inst.fit(x=training_data_fit, y=fake_label_data, batch_size=16, epochs=200, verbose=1)
+    # quantization-aware training
+    # q_aware stands for for quantization aware.
+    with quantize_scope(q_cfg_dict):
+        q_aware_model = quantize_apply(base_model)
+    q_aware_model.summary()
+    phy_bind_inst = ToyPhyBindModel(base=q_aware_model, random_start=8, sample_rate=10, sample_pts=32)
+    compile_model(model=phy_bind_inst, net_compile_key=net_compile_key)
+    phy_bind_inst.fit(x=training_data_fit, y=fake_label_data, batch_size=16, epochs=200, verbose=1)
+    # slope correction
+    training_data_res = np.reshape(training_data, newshape=(-1, training_data.shape[-1], 1))
+    infer_result_arr = np.zeros(shape=(training_data_res.shape[0], 10, 1), dtype=np.float32)
+    for i in range(10):
+        training_data_slice = training_data_res[:, i::10, :]
+        infer_result = q_aware_model(training_data_slice)
+        infer_result_arr[:, i, :] = infer_result
+    x = np.linspace(0, 1, 10, endpoint=False)
+    if verbose >= 1:
+        plt.figure()
+        for i in range(infer_result_arr.shape[0]):
+            plt.plot(x, infer_result_arr[i, :, 0])
+        plt.show()
+    slope_arr = np.zeros(shape=infer_result_arr.shape[0], dtype=np.float32)
+    for i in range(infer_result_arr.shape[0]):
+        res = linregress(x, infer_result_arr[i, :, 0])
+        slope_arr[i] = res.slope
+    mean_slope = np.mean(slope_arr)
+    # test model on test set
+    test_data_res = np.reshape(test_data, newshape=(-1, test_data.shape[-1], 1))
+    test_result = q_aware_model(test_data_res)
+    test_diff = test_result[0::2, 0] - test_result[1::2, 0]
+    test_diff = test_diff * (1. / mean_slope) * timestep
+    mean = np.mean(test_diff)
+    std = np.std(test_diff)
+    if verbose >= 1:
+        plt.figure()
+        plt.title("entries = %d, mean = %.3f, std. = %.3f" % (len(test_diff), float(mean), float(std)))
+        _, bins, _ = plt.hist(test_diff.numpy(), density=True)
+        x = np.linspace(bins[0], bins[-1], 101, endpoint=True)
+        plt.plot(x, norm.pdf(x, loc=mean, scale=std), "r--")
+        plt.show()
+    return std
+
+
+def work_routine(dirname, net_cfg_key="default_in32", use_quan=False, interp=10, folds=10, verbose=0):
     # generate dataset by interpolation
     adc_data_col = extract_data_multi(dirname=dirname, verbose=verbose)
     np.random.shuffle(adc_data_col)
@@ -118,7 +174,10 @@ def work_routine(dirname, interp=10, folds=10, verbose=0):
         test_vld[test_index] = True
         test_data = adc_data_col[test_vld]
         training_data = adc_data_int[np.logical_not(test_vld)]
-        result = apply_nn(training_data, test_data, verbose=verbose)
+        if use_quan:
+            result = apply_nn_quan(training_data, test_data, net_cfg_key=net_cfg_key, verbose=verbose)
+        else:
+            result = apply_nn(training_data, test_data, net_cfg_key=net_cfg_key, verbose=verbose)
         result_col.append(result)
         print("fold %d: timing resolution: %.3f (%.3f)" % (i, float(result), float(result) / np.sqrt(2.)))
     # post-training analysis
@@ -131,5 +190,7 @@ def work_routine(dirname, interp=10, folds=10, verbose=0):
 if __name__ == "__main__":
     work_routine(
         dirname="D:\\FPGAPrj\\nn_daq_trigger\\saved_data\\20220704",
+        net_cfg_key="default_act16_in32",
+        use_quan=True,
         verbose=0
     )

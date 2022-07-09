@@ -13,7 +13,66 @@ from tensorflow.keras import regularizers
 from tensorflow.keras import Model
 from tensorflow.keras import Sequential
 
+from src.quan_aux import quantize_annotate_layer, quantize_annotate_model
+from src.quan_aux import AVAILABLE_Q_CFG
 from src.util import update
+
+
+def build_seq_model(cfg, name="seq_model", l2_norm=None):
+    # generate input layer
+    input_length = cfg["input_length"]
+    input_layer: list[layers.Layer] = [layers.InputLayer(input_shape=(input_length, 1))]
+    # generate encoder layers
+    encoder_layer_spec = cfg["encoder_layer_spec"]
+    encoder_layers: list[layers.Layer] = []
+
+    q_cfg_dict = {}
+    for ind, (filters, kernel_size, strides, activation, dropout, *args) in enumerate(encoder_layer_spec):
+        q_cfg = args[0] if len(args) > 0 else "conv1d_default"
+        if l2_norm is not None:
+            k_reg = regularizers.l2(l2_norm)
+            b_reg = regularizers.l2(l2_norm)
+        else:
+            k_reg = None
+            b_reg = None
+        enc_layer = quantize_annotate_layer(
+            layers.Conv1D(filters, kernel_size, strides=strides, padding="same", name="enc_conv_%d" % ind,
+                          activation=activation, kernel_regularizer=k_reg, bias_regularizer=b_reg),
+            AVAILABLE_Q_CFG[q_cfg]()
+        )
+        q_cfg_dict[AVAILABLE_Q_CFG[q_cfg].__name__] = AVAILABLE_Q_CFG[q_cfg]
+        encoder_layers.append(enc_layer)
+        if dropout:
+            encoder_layers.append(layers.Dropout(rate=dropout, name="enc_conv_%d_dropout" % ind))
+    # generate regression layers
+    regression_spec = cfg["regression_spec"]
+    regression_layers: list[layers.Layer] = [layers.Flatten(name="reg_input_flat")]
+    for ind, (weights, activation, dropout, *args) in enumerate(regression_spec):
+        q_cfg = args[0] if len(args) > 0 else "dense_default"
+        if l2_norm is not None:
+            if ind == len(regression_spec) - 1:
+                k_reg = None
+                b_reg = None
+            else:
+                k_reg = regularizers.l2(l2_norm)
+                b_reg = regularizers.l2(l2_norm)
+        else:
+            k_reg = None
+            b_reg = None
+        reg_layer = quantize_annotate_layer(
+            layers.Dense(weights, name="reg_fc_%d" % ind, activation=activation, kernel_regularizer=k_reg,
+                         bias_regularizer=b_reg),
+            AVAILABLE_Q_CFG[q_cfg]()
+        )
+        q_cfg_dict[AVAILABLE_Q_CFG[q_cfg].__name__] = AVAILABLE_Q_CFG[q_cfg]
+        regression_layers.append(reg_layer)
+        if dropout:
+            regression_layers.append(layers.Dropout(rate=dropout, name="reg_fc_%d_dropout" % ind))
+
+    # generate model
+    seq_layers = input_layer + encoder_layers + regression_layers
+    model = quantize_annotate_model(Sequential(layers=seq_layers, name=name))
+    return model, q_cfg_dict
 
 
 def build_seq_model_base(cfg, name="seq_model", l2_norm=None):
