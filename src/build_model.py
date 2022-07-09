@@ -102,6 +102,72 @@ class PhyBindModel(Model, ABC):
         }
 
 
+class ToyPhyBindModel(Model, ABC):
+    def __init__(self, base, random_start, sample_rate, sample_pts, **kwargs):
+        super(ToyPhyBindModel, self).__init__(**kwargs)
+        self.base = base
+        self.random_start = random_start
+        self.sample_rate = sample_rate
+        self.sample_pts = sample_pts
+        self.total_loss_tracker = metrics.Mean(name="total_loss")
+
+    @property
+    def metrics(self):
+        return [
+            self.total_loss_tracker
+        ]
+
+    def train_step(self, data):
+        data = data_adapter.expand_1d(data)
+        x, y, _ = data_adapter.unpack_x_y_sample_weight(data)
+
+        assert len(x.shape) == 4 and x.shape[1] == 2, "Shape mismatches."
+
+        with tf.GradientTape() as tape:
+            # generate sampling tensor
+            start_ind = tf.random.categorical(
+                tf.math.log([[1./self.random_start]*self.random_start]*x.shape[0]), 1,
+                dtype=tf.int32
+            ) + 1
+            rnd_shift = tf.random.categorical(
+                tf.math.log([[0.5, 0.5]]*x.shape[0]), 1,
+                dtype=tf.int32
+            ) * 2 - 1
+            shift_comb = tf.concat(
+                (rnd_shift, tf.zeros_like(rnd_shift)),
+                axis=1
+            )
+            start_ind = tf.reshape(start_ind + shift_comb, shape=(x.shape[0], 2, 1))
+            range_ind = tf.reshape(
+                tf.tile(
+                    tf.range(0, self.sample_rate * self.sample_pts, delta=self.sample_rate, dtype=tf.int32),
+                    multiples=[x.shape[0] * 2]
+                ),
+                shape=(x.shape[0], 2, self.sample_pts)
+            )
+            sel_ind = start_ind + range_ind
+            x_gather = tf.gather(
+                x,
+                sel_ind,
+                axis=2,
+                batch_dims=2,
+            )
+            # infer with network
+            x_input = tf.reshape(x_gather, shape=(x.shape[0] * 2, self.sample_pts, 1), name="x_input_reshape")
+            y_output = self.base(x_input, training=True)
+            y_pred = y_output[0::2] - y_output[1::2]
+            y = -rnd_shift
+            y_diff = y_pred - tf.cast(y, dtype=tf.float32)
+            total_loss = tf.reduce_mean(y_diff ** 2)
+
+        grads = tape.gradient(total_loss, self.trainable_weights)
+        self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
+        self.total_loss_tracker.update_state(total_loss)
+        return {
+            "loss": self.total_loss_tracker.result()
+        }
+
+
 def compile_model(model: Model, net_compile_key="adam"):
     model.compile(optimizer=net_compile_key)
 
@@ -148,5 +214,27 @@ def test_model():
     print(base.trainable_weights[0][0][0])
 
 
+def test_model_2():
+    base_inputs = Input(shape=(32, 1))
+    x = layers.Conv1D(32, 4, activation="relu", strides=2, padding="same")(base_inputs)
+    x = layers.Conv1D(64, 4, activation="relu", strides=2, padding="same")(x)
+    x = layers.Flatten()(x)
+    x = layers.Dense(16, activation="relu")(x)
+    x = layers.Dense(1, activation=None)(x)
+    base = Model(base_inputs, x, name="encoder")
+    base.summary()
+
+    phy_bind_model = ToyPhyBindModel(base=base, random_start=10, sample_rate=4, sample_pts=32)
+
+    x_fake = np.random.random(size=(128, 2, 160, 1)).astype(np.float32)
+    y_fake = np.random.random(size=(128, 2, 1)).astype(np.float32)
+
+    print(base.trainable_weights[0][0][0])
+    phy_bind_model.compile(optimizer=optimizers.Adam())
+    phy_bind_model.fit(x=x_fake, y=y_fake, batch_size=16, epochs=40, verbose=0)
+    print(base.trainable_weights[0][0][0])
+
+
 if __name__ == "__main__":
     test_model()
+    test_model_2()
