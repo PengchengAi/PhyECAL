@@ -103,7 +103,7 @@ def apply_nn_quan(training_data, test_data, net_cfg_key="default_in32", net_comp
     compile_model(model=phy_bind_inst, net_compile_key=net_compile_key)
     phy_bind_inst.fit(x=training_data_fit, y=fake_label_data, batch_size=16, epochs=200, verbose=1)
     # quantization-aware training
-    # q_aware stands for for quantization aware.
+    # q_aware stands for quantization aware
     with quantize_scope(q_cfg_dict):
         q_aware_model = quantize_apply(base_model)
     q_aware_model.summary()

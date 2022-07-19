@@ -3,6 +3,8 @@ import yaml
 
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.interpolate import interp1d
+import pandas as pd
 
 from src.util import update
 
@@ -11,6 +13,8 @@ def normalize_waveform(inputs, targets, norm_max_val=0.9, norm_min_val=-0.9):
     wave_max_val = np.max([np.max(inputs), np.max(targets)])
     wave_min_val = np.min([np.min(inputs), np.min(targets)])
     dynamic_range = wave_max_val - wave_min_val
+    if dynamic_range < np.finfo(np.float32).eps:
+        raise Exception("Normalization can not be performed.")
     norm_range = norm_max_val - norm_min_val
     inputs_normed = (inputs - wave_min_val) / dynamic_range * norm_range + norm_min_val
     targets_normed = (targets - wave_min_val) / dynamic_range * norm_range + norm_min_val
@@ -23,6 +27,8 @@ def normalize_labels(labels, norm_max_val=0.9, norm_min_val=-0.9):
     labels_min_val = np.min(labels, axis=axis)
     assert len(labels_max_val) == labels.shape[-1] and len(labels_min_val) == labels.shape[-1], "Dimension error."
     dynamic_range = labels_max_val - labels_min_val
+    if dynamic_range < np.finfo(np.float32).eps:
+        raise Exception("Normalization can not be performed.")
     norm_range = norm_max_val - norm_min_val
     # use broadcast to infer the shape of output
     labels_normed = (labels - labels_min_val) / dynamic_range * norm_range + norm_min_val
@@ -261,6 +267,63 @@ class DataHandler(object):
         }
 
 
+class CVDataHandler(DataHandler):
+    def __init__(self, folds, npz_file, **kwargs):
+        super(CVDataHandler, self).__init__(npz_file, **kwargs)
+        self._folds = folds
+        self._cnt_div = self._count // self._folds
+
+    def generate_fold_dataset(self, fold_index, slice_label=None):
+        assert 0 <= fold_index <= self._folds - 1, "Fold index out of range."
+        test_index = np.arange(self._cnt_div * fold_index, self._cnt_div * (fold_index + 1), 1, dtype=np.int32)
+        test_vld = np.zeros(shape=self._count, dtype=bool)
+        test_vld[test_index] = True
+
+        test_count = np.count_nonzero(test_vld)
+        test_inputs = self._inputs[test_vld, ...]
+        test_targets = self._targets[test_vld, ...]
+        test_labels = self._labels[test_vld, ...]
+
+        if slice_label is not None:
+            if not isinstance(slice_label, (tuple, list)):
+                slice_label = (slice_label,)
+            test_labels = test_labels[..., slice_label]
+
+        test_inputs = np.expand_dims(test_inputs, axis=-1)
+        test_targets = np.expand_dims(test_targets, axis=-1)
+
+        test_dataset = {
+            "count": test_count,
+            "inputs": test_inputs,
+            "targets": test_targets,
+            "labels": test_labels
+        }
+
+        train_vld = np.logical_not(test_vld)
+
+        train_count = np.count_nonzero(train_vld)
+        train_inputs = self._inputs[train_vld, ...]
+        train_targets = self._targets[train_vld, ...]
+        train_labels = self._labels[train_vld, ...]
+
+        if slice_label is not None:
+            if not isinstance(slice_label, (tuple, list)):
+                slice_label = (slice_label,)
+            train_labels = train_labels[..., slice_label]
+
+        train_inputs = np.expand_dims(train_inputs, axis=-1)
+        train_targets = np.expand_dims(train_targets, axis=-1)
+
+        train_dataset = {
+            "count": train_count,
+            "inputs": train_inputs,
+            "targets": train_targets,
+            "labels": train_labels
+        }
+
+        return train_dataset, test_dataset
+
+
 def prepare_data_inst_npz(config_file, upd_dict=None, data_key="bind", amount=None, debug=False, store_gen_data=True):
     with open(config_file, mode="r") as fp:
         cfg = yaml.load(fp, Loader=yaml.FullLoader)
@@ -399,4 +462,99 @@ def prepare_data_inst_npz(config_file, upd_dict=None, data_key="bind", amount=No
 
     cfg["dataset"][data_key]["npz_file"] = data_dict
     dh_inst = DataHandler(**(cfg["dataset"][data_key]))
+    return dh_inst
+
+
+def ila_extract_data(path, verbose=0):
+    # extract data
+    df = pd.read_csv(path)
+    if verbose >= 1:
+        print(df.info())
+    df_vld = df.iloc[1:]
+    df_vld = df_vld.convert_dtypes()  # an error will occur without this statement
+    if verbose >= 2:
+        print(df_vld.info())
+    df_vld[:] = df_vld[:].astype(np.int32)
+    if verbose >= 2:
+        print(df_vld.info())
+    df_vld = df_vld.loc[df_vld["mon_ckpt_inst/valid_flag"] == 1]
+    if verbose >= 2:
+        print(df_vld.info())
+    adc_data = df_vld["mon_ckpt_inst/mem_dout[11:0]"].to_numpy()
+    if verbose >= 2:
+        print(adc_data)
+    adc_data = np.reshape(adc_data, newshape=(-1, 2, 32))
+    return adc_data
+
+
+def ila_extract_data_multi(dirname, file_cnt=10, file_prefix="iladata", verbose=0):
+    adc_data_col = []
+    for i in range(file_cnt):
+        filename = file_prefix + str(i+1) + ".csv"
+        file_path = os.path.join(dirname, filename)
+        adc_data = ila_extract_data(path=file_path, verbose=verbose)
+        adc_data_col.append(adc_data)
+    adc_data_col = np.concatenate(adc_data_col, axis=0)
+    return adc_data_col
+
+
+def prepare_data_inst_cv(config_file, upd_dict=None, data_key="toy", verbose=0, store_gen_data=True):
+    with open(config_file, mode="r") as fp:
+        cfg = yaml.load(fp, Loader=yaml.FullLoader)
+    if upd_dict is not None:
+        cfg = update(cfg, upd_dict)
+        print("Configuration has been updated with the dictionary:", upd_dict)
+
+    if store_gen_data:
+        if not os.path.exists(cfg["supp"]["save_dir"]):
+            os.makedirs(cfg["supp"]["save_dir"])
+        gen_path = os.path.join(
+            cfg["supp"]["save_dir"],
+            "%s-%s_data.npz" % (cfg["supp"]["save_prefix"], data_key)
+        )
+    else:
+        gen_path = None
+
+    if gen_path is not None and os.path.exists(gen_path):
+        cfg["dataset"][data_key]["npz_file"] = gen_path
+        dh_inst = CVDataHandler(**(cfg["dataset"][data_key]))
+        return dh_inst
+
+    sig_cfg = cfg["signal_ila"]
+
+    # generate dataset by interpolation
+    adc_data_col = ila_extract_data_multi(dirname=sig_cfg["dirname"], verbose=verbose)
+    np.random.shuffle(adc_data_col)
+    sample_len = adc_data_col.shape[-1]
+    adc_data_res = np.reshape(adc_data_col, newshape=(-1, sample_len))
+    adc_data_int = np.zeros(shape=(adc_data_res.shape[0], sample_len * sig_cfg["interp"]), dtype=np.float32)
+    x = np.arange(-1, sample_len, 1)
+    for i in range(adc_data_res.shape[0]):
+        y = np.concatenate((adc_data_res[i, 0:1], adc_data_res[i, :]), axis=0)
+        func = interp1d(x, y)
+        xnew = np.linspace(-1, sample_len - 1, sample_len * sig_cfg["interp"], endpoint=False)
+        ynew = func(xnew)
+        if verbose >= 2:
+            plt.figure()
+            plt.plot(x, y, 'o', xnew, ynew, '-')
+            plt.show()
+        adc_data_int[i, :] = ynew
+    adc_data_int = np.reshape(adc_data_int, newshape=adc_data_col.shape[:-1] + (sample_len * sig_cfg["interp"],))
+    sample_cnt = adc_data_col.shape[0]
+
+    data_dict = {
+        "count": sample_cnt,
+        "inputs": adc_data_int,
+        "targets": adc_data_col,
+        "labels": np.zeros(shape=(sample_cnt, 2, 1), dtype=np.float32)
+    }
+
+    if gen_path is not None and not os.path.exists(gen_path):
+        np.savez(
+            gen_path,
+            **data_dict
+        )
+
+    cfg["dataset"][data_key]["npz_file"] = data_dict
+    dh_inst = CVDataHandler(**(cfg["dataset"][data_key]))
     return dh_inst

@@ -21,7 +21,6 @@ default_in128_config = {
     ),
     "slicing_spec": (
         (0, 1, "time"),
-        (1, 2, "energy")
     )
 }
 
@@ -48,7 +47,6 @@ full_in640_config = {
     ),
     "slicing_spec": (
         (0, 1, "time"),
-        (1, 2, "energy")
     )
 }
 
@@ -69,7 +67,6 @@ compact_in640_config = {
     ),
     "slicing_spec": (
         (0, 1, "time"),
-        (1, 2, "energy")
     )
 }
 
@@ -90,7 +87,6 @@ default_in32_config = {
     ),
     "slicing_spec": (
         (0, 1, "time"),
-        (1, 2, "energy")
     )
 }
 
@@ -111,7 +107,6 @@ default_act16_in32_config = {
     ),
     "slicing_spec": (
         (0, 1, "time"),
-        (1, 2, "energy")
     )
 }
 
@@ -132,7 +127,6 @@ dense_in32_config = {
     ),
     "slicing_spec": (
         (0, 1, "time"),
-        (1, 2, "energy")
     )
 }
 
@@ -153,7 +147,6 @@ dense_act16_in32_config = {
     ),
     "slicing_spec": (
         (0, 1, "time"),
-        (1, 2, "energy")
     )
 }
 
