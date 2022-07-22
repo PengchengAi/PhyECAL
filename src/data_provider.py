@@ -74,14 +74,15 @@ def process_npz_file(npz_file, norm_wave, norm_label, norm_max_val=0.9, norm_min
 
 class DataHandler(object):
     def __init__(self, npz_file, ratio=(4, 1), use_validation=False, norm_wave=True, norm_label=True, checkpoint=None,
-                 reverse_wave=False, slicing_wave=None, origin_wave=False, ds_noise=None):
+                 reverse_wave=False, slicing_wave=None, origin_wave=False, ds_noise=None,
+                 norm_max_val=0.9, norm_min_val=-0.9):
         assert isinstance(ratio, (list, tuple)), "Ratio is not valid."
         if use_validation:
             assert len(ratio) == 3, "Ratio length is not appropriate."
         else:
             assert len(ratio) == 2, "Ratio length is not appropriate."
         self._count, self._inputs, self._targets, self._labels, self._norm_dict = process_npz_file(
-            npz_file, norm_wave, norm_label
+            npz_file, norm_wave, norm_label, norm_max_val=norm_max_val, norm_min_val=norm_min_val
         )
         self._ratio = ratio
         self._use_validation = use_validation

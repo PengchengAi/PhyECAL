@@ -11,7 +11,7 @@ from conf.net_config import AVAILABLE_CONFIGS
 from src.data_provider import prepare_data_inst_cv, prepare_data_inst_npz
 
 
-def get_int_params(weights_dict, val_key, min_key, max_key, bits, narrow_range=False, scale=1, verbose=0):
+def get_int_params(weights_dict, val_key, min_key, max_key, bits, narrow_range=False, scale=None, verbose=0):
     if val_key is not None:
         if isinstance(val_key, str):
             val = weights_dict[val_key]
@@ -421,6 +421,9 @@ def simulated_inference(config_file, hdf5_path, model_result_path, in_set="testv
     f_net = f_root["network"]
     output_spec_names = f_net["output_spec"][:]
 
+    if debug:
+        print("input", inputs_reshape[:1].tolist())
+
     last_fmap = inputs_reshape
     last_layer_name = None
     # infer with convolution layers if there are any
@@ -472,8 +475,7 @@ def simulated_inference(config_file, hdf5_path, model_result_path, in_set="testv
                         print("Exclude %d examples in conv layer %d" % (exclude_cnt, i))
                         valid_mask = np.logical_and(valid_mask, range_valid)
                 if debug:
-                    conv_act_res_recover = conv_act_res[:1] * f_conv["bias"].attrs["scale"]
-                    print("enc_conv_%d" % i, conv_act_res_recover.tolist())
+                    print("enc_conv_%d" % i, conv_act_res[:1].tolist())
             if export_fmap is not None:
                 fmap_dict["enc_conv_output_%d" % i] = conv_act_res
             last_fmap = conv_act_res
@@ -512,6 +514,7 @@ def simulated_inference(config_file, hdf5_path, model_result_path, in_set="testv
                         print("Exclude %d examples in fc layer %d" % (exclude_cnt, i))
                         valid_mask = np.logical_and(valid_mask, range_valid)
                 if debug:
+                    print(f_act.attrs["zero"], f_act.attrs["scale"])
                     print("reg_fc_%d" % i, fc_act_res[:1].tolist())
             else:
                 fc_act_res = fc_bias_res
@@ -528,8 +531,7 @@ def simulated_inference(config_file, hdf5_path, model_result_path, in_set="testv
                         print("Exclude %d examples in fc layer %d" % (exclude_cnt, i))
                         valid_mask = np.logical_and(valid_mask, range_valid)
                 if debug:
-                    fc_act_res_recover = fc_act_res[:1] * f_fc["bias"].attrs["scale"]
-                    print("reg_fc_%d" % i, fc_act_res_recover.tolist())
+                    print("reg_fc_%d" % i, fc_act_res[:1].tolist())
             if export_fmap is not None:
                 fmap_dict["reg_fc_output_%d" % i] = fc_act_res
             last_fmap = fc_act_res

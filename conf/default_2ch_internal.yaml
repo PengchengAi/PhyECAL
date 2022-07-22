@@ -18,6 +18,8 @@ dataset:
     norm_wave: true
     norm_label: false
     checkpoint: './temp/default_2ch/nn_data_var_chk.npz'
+    norm_max_val: 0.95
+    norm_min_val: 0.05
 
 baseline:
   upd_kwargs:
