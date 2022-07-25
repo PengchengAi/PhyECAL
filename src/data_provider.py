@@ -499,7 +499,7 @@ def ila_extract_data_multi(dirname, file_cnt=10, file_prefix="iladata", verbose=
     return adc_data_col
 
 
-def prepare_data_inst_cv(config_file, upd_dict=None, data_key="toy", verbose=0, store_gen_data=True):
+def prepare_data_inst_cv(config_file, upd_dict=None, data_key="toy", file_cnt=10, verbose=0, store_gen_data=True):
     with open(config_file, mode="r") as fp:
         cfg = yaml.load(fp, Loader=yaml.FullLoader)
     if upd_dict is not None:
@@ -524,7 +524,7 @@ def prepare_data_inst_cv(config_file, upd_dict=None, data_key="toy", verbose=0, 
     sig_cfg = cfg["signal_ila"]
 
     # generate dataset by interpolation
-    adc_data_col = ila_extract_data_multi(dirname=sig_cfg["dirname"], verbose=verbose)
+    adc_data_col = ila_extract_data_multi(dirname=sig_cfg["dirname"], file_cnt=file_cnt, verbose=verbose)
     np.random.shuffle(adc_data_col)
     sample_len = adc_data_col.shape[-1]
     adc_data_res = np.reshape(adc_data_col, newshape=(-1, sample_len))

@@ -4,8 +4,9 @@ import inspect
 
 import h5py
 import numpy as np
+import matplotlib.pyplot as plt
 from tensorflow.keras.models import load_model, Model
-from scipy.stats import linregress
+from scipy.stats import linregress, norm
 
 from conf.net_config import AVAILABLE_CONFIGS
 from src.data_provider import prepare_data_inst_cv, prepare_data_inst_npz
@@ -359,16 +360,30 @@ def model_export(config_file, param_export_path, hdf5_path, force_override=False
     return True
 
 
-def size_both_metric(result, count):
+def size_both_metric(result, count, name=None, verbose=0):
     assert result.shape[0] == count and result.shape[1] == 2, "Shape mismatches."
     diff = result[:, 0] - result[:, 1]
     # compute metrics
     mean = np.mean(diff)
     std = np.std(diff)
+    if verbose >= 1:
+        # plot results
+        plt.figure()
+        t_str = "mean = %.3f ns, std. = %.3f ns" % (float(mean), float(std))
+        if name is not None:
+            t_str = "%s\n" % name + t_str
+        plt.title(t_str)
+        _, bins, _ = plt.hist(diff, density=True)
+        plt.xlabel("time (ns)")
+        plt.ylabel("probability density")
+        x = np.linspace(bins[0], bins[-1], 101, endpoint=True)
+        plt.plot(x, norm.pdf(x, loc=mean, scale=std), "r--")
+        plt.show()
     return mean, std
 
 
-def size_many_metric(result, count):
+def size_many_metric(result, count, **kwargs):
+    print("Not supported currently:", **kwargs)
     assert result.shape[0] == count and result.shape[1] >= 4, "Shape mismatches."
     group_size = result.shape[1]
     # linear regression
@@ -386,7 +401,7 @@ def size_many_metric(result, count):
 
 
 def simulated_inference(config_file, hdf5_path, model_result_path, in_set="testval", round_to_even=True, debug=False,
-                        assertion=False, exclude_outliers=False, export_fmap=None):
+                        assertion=False, exclude_outliers=False, export_fmap=None, metric_name=None, verbose=0):
     with open(config_file, mode="r") as fp:
         cfg = yaml.load(fp, Loader=yaml.FullLoader)
 
@@ -586,9 +601,11 @@ def simulated_inference(config_file, hdf5_path, model_result_path, in_set="testv
     print("----------------------------------")
     name = output_spec_names[0].decode("UTF-8")
     if group_size == 2:
-        bias, precision = size_both_metric(result_reshape, sample_cnt-final_exclude_cnt)
+        bias, precision = size_both_metric(result_reshape, sample_cnt-final_exclude_cnt,
+                                           name=metric_name, verbose=verbose)
     else:
-        bias, precision = size_many_metric(result_reshape, sample_cnt-final_exclude_cnt)
+        bias, precision = size_many_metric(result_reshape, sample_cnt-final_exclude_cnt,
+                                           name=metric_name, verbose=verbose)
     print("Slice (%s): bias: %.4f, precision: %.4f" % (name, float(bias), float(precision)))
 
     f_root.close()
@@ -596,7 +613,7 @@ def simulated_inference(config_file, hdf5_path, model_result_path, in_set="testv
 
 
 def original_inference(config_file, model_save_path, model_result_path, output_keys=("time",), valid=None,
-                       debug=False, **kwargs):
+                       debug=False, metric_name=None, verbose=0, **kwargs):
     with open(config_file, mode="r") as fp:
         cfg = yaml.load(fp, Loader=yaml.FullLoader)
 
@@ -639,9 +656,11 @@ def original_inference(config_file, model_save_path, model_result_path, output_k
     print("----------------------------------")
     name = output_keys[0]
     if group_size == 2:
-        bias, precision = size_both_metric(outputs_reshape, sample_cnt-final_exclude_cnt)
+        bias, precision = size_both_metric(outputs_reshape, sample_cnt-final_exclude_cnt,
+                                           name=metric_name, verbose=verbose)
     else:
-        bias, precision = size_many_metric(outputs_reshape, sample_cnt-final_exclude_cnt)
+        bias, precision = size_many_metric(outputs_reshape, sample_cnt-final_exclude_cnt,
+                                           name=metric_name, verbose=verbose)
     print("Slice (%s): bias: %.4f, precision: %.4f" % (name, float(bias), float(precision)))
 
     if debug:
@@ -658,25 +677,38 @@ def original_inference(config_file, model_save_path, model_result_path, output_k
 
 if __name__ == "__main__":
     model_export(
-        config_file="./conf/default_2ch_internal.yaml",
-        param_export_path="./temp/default_2ch/export/default_2ch-toy_seq_model_export.npz",
-        hdf5_path="./temp/model_quan_export/default_2ch/export_default_2ch_hyper.hdf5",
+        config_file="./conf/exp_gather_2ch_internal.yaml",
+        param_export_path="./temp/exp_gather_2ch/export/exp_gather_2ch-toy_seq_model_quan_export.npz",
+        hdf5_path="./temp/model_quan_export/exp_gather_2ch/export_exp_gather_2ch_hyper.hdf5",
         force_override=True
     )
     _, valid_plain = simulated_inference(
-        config_file="./conf/default_2ch_internal.yaml",
-        hdf5_path="./temp/model_quan_export/default_2ch/export_default_2ch_hyper.hdf5",
-        model_result_path="./temp/default_2ch/result/default_2ch-toy_seq_model_res.yaml",
+        config_file="./conf/exp_gather_2ch_internal.yaml",
+        hdf5_path="./temp/model_quan_export/exp_gather_2ch/export_exp_gather_2ch_hyper.hdf5",
+        model_result_path="./temp/exp_gather_2ch/result/exp_gather_2ch-toy_seq_model_quan_res.yaml",
         round_to_even=False,
         debug=True,
         assertion=True,
         exclude_outliers=True,
-        export_fmap="./temp/model_quan_export/default_2ch/fmap_default_2ch_hyper.hdf5"
+        export_fmap="./temp/model_quan_export/exp_gather_2ch/fmap_exp_gather_2ch_hyper.hdf5",
+        metric_name="Quantized NN (diff. of two channels)",
+        verbose=1
     )
     original_inference(
-        config_file="./conf/default_2ch_internal.yaml",
-        model_save_path="./temp/default_2ch/model/default_2ch-toy_seq_model",
-        model_result_path="./temp/default_2ch/result/default_2ch-toy_seq_model_res.yaml",
+        config_file="./conf/exp_gather_2ch_internal.yaml",
+        model_save_path="./temp/exp_gather_2ch/model/exp_gather_2ch-toy_seq_model_quan",
+        model_result_path="./temp/exp_gather_2ch/result/exp_gather_2ch-toy_seq_model_quan_res.yaml",
         valid=valid_plain,
-        debug=False
+        debug=False,
+        metric_name="Quantization-aware NN (diff. of two channels)",
+        verbose=1
+    )
+    original_inference(
+        config_file="./conf/exp_gather_2ch_internal.yaml",
+        model_save_path="./temp/exp_gather_2ch/model/exp_gather_2ch-toy_seq_model",
+        model_result_path="./temp/exp_gather_2ch/result/exp_gather_2ch-toy_seq_model_res.yaml",
+        valid=valid_plain,
+        debug=False,
+        metric_name="Floating-point NN (diff. of two channels)",
+        verbose=1
     )

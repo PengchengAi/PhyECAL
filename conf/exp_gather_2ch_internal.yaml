@@ -1,0 +1,84 @@
+signal_ila:
+  dirname: 'D:/FPGAPrj/nn_daq_trigger/saved_data/20220724'
+  interp: 10
+
+supp:
+  save_dir: './temp/exp_gather_2ch/'
+  save_prefix: 'exp_gather_2ch'
+
+dataset:
+  toy:
+    folds: 5
+    npz_file: { }
+    ratio:
+      - 8
+      - 1
+      - 1
+    use_validation: true
+    norm_wave: true
+    norm_label: false
+    checkpoint: './temp/exp_gather_2ch/nn_data_var_chk.npz'
+    norm_max_val: 0.95
+    norm_min_val: 0.05
+
+baseline:
+  upd_kwargs:
+    use_toy: true
+    file_cnt: 100
+    net_cfg_key: 'default_in32'
+    net_compile_key: 'adam'
+    data_key: 'toy'
+    verbose: 1
+  timestep: 8.0
+  random_start: 8
+  sample_rate: 10
+  sample_pts: 32
+  slope_range: 10
+  train_batch_size: 128
+  train_epoch: 400
+  save_model: true
+  export_model: true
+  save_results: true
+
+quantize:
+  upd_kwargs:
+    net_cfg_key: 'default_in32'
+    net_compile_key: 'adam'
+    data_key: 'toy'
+    verbose: 1
+  timestep: 8.0
+  random_start: 8
+  sample_rate: 10
+  sample_pts: 32
+  slope_range: 10
+  train_batch_size: 128
+  train_epoch: 600
+  save_model: true
+  save_name_override: 'seq_model_quan'
+  export_model: true
+  export_name_override: 'seq_model_quan'
+  save_results: true
+  result_name_override: 'seq_model_quan'
+
+export:
+  upd_kwargs:
+    use_toy: true
+    file_cnt: 100
+    net_cfg_key: 'default_in32'
+    data_key: 'toy'
+    verbose: 1
+  input_bits: 8
+  conv_kernel_bits: 8
+  conv_act_bits: 8
+  fc_kernel_bits: 8
+  fc_act_bits: 8
+  input_scale: 1
+  conv_kernel_scale: 1
+  conv_act_scale: 1.05
+  fc_kernel_scale: 1
+  fc_act_scale: 1
+
+global:
+  model_save_dir: './temp/exp_gather_2ch/model/'
+  model_export_dir: './temp/exp_gather_2ch/export/'
+  result_save_dir: './temp/exp_gather_2ch/result/'

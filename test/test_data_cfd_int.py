@@ -213,8 +213,11 @@ def multi_file_routine(dirname, file_cnt=10, file_prefix="iladata", verbose=0):
     std = np.std(time_diff_col)
     # plot results
     plt.figure()
-    plt.title("entries = %d, mean = %.3f, std. = %.3f" % (len(time_diff_col), float(mean), float(std)))
+    plt.title("Interpolated CFD (diff. of two channels)\n" +
+              "mean = %.3f ns, std. = %.3f ns" % (float(mean), float(std)))
     _, bins, _ = plt.hist(time_diff_col, density=True)
+    plt.xlabel("time (ns)")
+    plt.ylabel("probability density")
     x = np.linspace(bins[0], bins[-1], 101, endpoint=True)
     plt.plot(x, norm.pdf(x, loc=mean, scale=std), "r--")
     plt.show()
@@ -226,8 +229,8 @@ if __name__ == "__main__":
     #     verbose=1
     # )
     multi_file_routine(
-        dirname="D:\\FPGAPrj\\nn_daq_trigger\\saved_data\\20220704",
-        file_cnt=10,
+        dirname="D:\\FPGAPrj\\nn_daq_trigger\\saved_data\\20220724",
+        file_cnt=100,
         file_prefix="iladata",
-        verbose=1
+        verbose=0
     )

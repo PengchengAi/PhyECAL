@@ -82,8 +82,11 @@ def couple_routine(config_file, **kwargs):
     std = np.std(test_diff)
     if kwargs["verbose"] >= 1:
         plt.figure()
-        plt.title("entries = %d, mean = %.3f, std. = %.3f" % (len(test_diff), float(mean), float(std)))
+        plt.title("Floating-point NN (diff. of two channels)\n" +
+                  "mean = %.3f ns, std. = %.3f ns" % (float(mean), float(std)))
         _, bins, _ = plt.hist(test_diff.numpy(), density=True)
+        plt.xlabel("time (ns)")
+        plt.ylabel("probability density")
         x = np.linspace(bins[0], bins[-1], 101, endpoint=True)
         plt.plot(x, norm.pdf(x, loc=mean, scale=std), "r--")
         plt.show()
@@ -193,8 +196,11 @@ def couple_routine_quan(config_file, base_model=None, data_handler=None, q_cfg_d
     std = np.std(test_diff)
     if kwargs["verbose"] >= 1:
         plt.figure()
-        plt.title("entries = %d, mean = %.3f, std. = %.3f" % (len(test_diff), float(mean), float(std)))
+        plt.title("Quantization-aware NN (diff. of two channels)\n" +
+                  "mean = %.3f ns, std. = %.3f ns" % (float(mean), float(std)))
         _, bins, _ = plt.hist(test_diff.numpy(), density=True)
+        plt.xlabel("time (ns)")
+        plt.ylabel("probability density")
         x = np.linspace(bins[0], bins[-1], 101, endpoint=True)
         plt.plot(x, norm.pdf(x, loc=mean, scale=std), "r--")
         plt.show()
@@ -234,6 +240,5 @@ def couple_routine_quan(config_file, base_model=None, data_handler=None, q_cfg_d
 
 if __name__ == "__main__":
     couple_routine_quan(
-        config_file="./conf/default_2ch_internal.yaml",
-        fold_index=0
+        config_file="./conf/exp_gather_2ch_internal.yaml"
     )
